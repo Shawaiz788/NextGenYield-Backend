@@ -31,3 +31,5 @@ ENV/
 uploads/*
 !uploads/.gitkeep
 
+
+run_command.txt
