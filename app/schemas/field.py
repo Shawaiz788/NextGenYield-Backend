@@ -54,6 +54,7 @@ class FieldResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     field_id: str
+    field_code: Optional[str] = None
     user_id: str
     field_name: str
     shape_type: str

@@ -6,6 +6,7 @@ class Field(Base):
     __tablename__ = "fields"
 
     field_id = Column(String(50), primary_key=True, index=True)
+    field_code = Column(String(20), nullable=True, index=True)
     user_id = Column(String(50), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
     field_name = Column(String(50), nullable=False)
     shape_type = Column(String(15), nullable=False)  # square, rectangle, polygon, circle

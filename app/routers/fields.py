@@ -64,8 +64,23 @@ def create_field(
     # 1 Acre = 4046.85642 Sq Meters
     area_sqm = req.area_sqm or round(req.area_acres * 4046.85642, 2)
 
+    # Determine city/district code from user profile
+    district_clean = (current_user.district or "FSD").split("/")[0].strip().upper()
+    city_code = "LHR" if "LAHORE" in district_clean else (
+        "FSD" if "FAISALABAD" in district_clean else (
+            "MLT" if "MULTAN" in district_clean else (
+                "SWL" if "SAHIWAL" in district_clean else district_clean[:3]
+            )
+        )
+    )
+
+    # Calculate sequential number for user's field in this region (1, 2, 3...)
+    existing_count = db.query(Field).filter(Field.user_id == current_user.user_id).count()
+    field_code = f"PK-{city_code}-{str(existing_count + 1).zfill(2)}"
+
     new_field = Field(
         field_id=field_id,
+        field_code=field_code,
         user_id=current_user.user_id,
         field_name=req.field_name,
         shape_type=req.shape_type,
