@@ -33,3 +33,6 @@ class AgronomicAdvisoryRule(Base):
     risk_alerts = Column(JSON, nullable=False)
     audio_script_ur = Column(Text, nullable=False)
 
+# Alias for consistent naming
+PeerShowcase = PeerShowcaseField
+

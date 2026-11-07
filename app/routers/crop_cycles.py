@@ -79,6 +79,68 @@ def start_crop_cycle(
         irrigation_schedules=[IrrigationScheduleResponse.model_validate(i) for i in irrig_list],
     )
 
+@router.get("/field/{field_id}/active", response_model=CropCycleResponse)
+def get_active_crop_cycle_for_field(
+    field_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch the currently active crop cycle for a specific field,
+    including all generated fertilizer and irrigation schedule milestones.
+    Returns 404 if the field does not exist or has no active cycle.
+    """
+    field = db.query(Field).filter(
+        Field.field_id == field_id,
+        Field.user_id == current_user.user_id
+    ).first()
+    if not field:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Field with ID '{field_id}' not found"
+        )
+
+    cycle = (
+        db.query(CropCycle)
+        .filter(CropCycle.field_id == field_id, CropCycle.is_active == True)
+        .order_by(CropCycle.created_at.desc())
+        .first()
+    )
+
+    if not cycle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No active crop cycle found for field '{field_id}'"
+        )
+
+    ferts = (
+        db.query(FertilizerSchedule)
+        .filter(FertilizerSchedule.cycle_id == cycle.cycle_id)
+        .order_by(FertilizerSchedule.split_number.asc())
+        .all()
+    )
+    irrigs = (
+        db.query(IrrigationSchedule)
+        .filter(IrrigationSchedule.cycle_id == cycle.cycle_id)
+        .order_by(IrrigationSchedule.target_das.asc())
+        .all()
+    )
+
+    return CropCycleResponse(
+        cycle_id=cycle.cycle_id,
+        field_id=cycle.field_id,
+        wheat_variety=cycle.wheat_variety,
+        seed_company=cycle.seed_company,
+        fertilizer_company=cycle.fertilizer_company,
+        sowing_method=cycle.sowing_method,
+        sowing_date=cycle.sowing_date,
+        target_harvest_date=cycle.target_harvest_date,
+        is_active=cycle.is_active,
+        created_at=cycle.created_at,
+        fertilizer_schedules=[FertilizerScheduleResponse.model_validate(f) for f in ferts],
+        irrigation_schedules=[IrrigationScheduleResponse.model_validate(i) for i in irrigs],
+    )
+
 @router.get("/{cycle_id}", response_model=CropCycleResponse)
 def get_cycle_details(
     cycle_id: str,

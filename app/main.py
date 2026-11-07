@@ -1,14 +1,33 @@
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from contextlib import asynccontextmanager
 import os
+import logging
 
 from app.config import settings
 from app.database import engine, Base
+from app.core.seed_data import seed
 from app.routers import auth, fields, crop_cycles, observations, advisory
 
-# Initialize database schema tables on startup
-Base.metadata.create_all(bind=engine)
+logger = logging.getLogger("NextGenYield:Backend")
+
+def init_db():
+    """Ensure database schema tables are created and seeded with reference data."""
+    Base.metadata.create_all(bind=engine)
+    try:
+        seed()
+    except Exception as e:
+        logger.warning(f"Database startup seeding notice: {e}")
+
+# Trigger schema creation and seed on import (guarantees readiness for TestClient and worker processes)
+init_db()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI Lifespan Context Manager: runs on server startup and shutdown."""
+    init_db()
+    yield
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -16,6 +35,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Enable CORS for React Native / Expo development and web clients

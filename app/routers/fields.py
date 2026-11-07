@@ -96,6 +96,89 @@ def get_field_details(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
     return field
 
+@router.put("/{field_id}", response_model=FieldResponse)
+def update_field(
+    field_id: str,
+    req: FieldUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update farm parcel attributes (name, area, shape, boundary, coordinates, soil texture).
+    Verifies that the logged-in farmer owns the field.
+    """
+    field = db.query(Field).filter(Field.field_id == field_id).first()
+    if not field:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Field with ID '{field_id}' not found"
+        )
+
+    if field.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You do not have permission to modify this field parcel"
+        )
+
+    # 1. Update name
+    if req.field_name is not None:
+        field.field_name = req.field_name
+
+    # 2. Update shape type
+    if req.shape_type is not None:
+        field.shape_type = req.shape_type
+
+    # 3. Handle boundary GeoJSON, coordinates, and soil texture
+    bg = dict(field.boundary_geojson or {})
+    boundary_changed = False
+
+    if req.boundary_geojson is not None:
+        bg = dict(req.boundary_geojson)
+        boundary_changed = True
+    elif req.coordinates is not None:
+        coords = req.coordinates
+        # Wrap single ring [[lng, lat], ...] to GeoJSON Polygon rings [[[lng, lat], ...]]
+        if coords and isinstance(coords[0], list) and isinstance(coords[0][0], (int, float)):
+            coords = [coords]
+        bg["type"] = "Polygon"
+        bg["coordinates"] = coords
+        boundary_changed = True
+
+    # Handle soil texture in GeoJSON properties
+    if req.soil_texture is not None:
+        props = dict(bg.get("properties") or {})
+        props["soil_texture"] = req.soil_texture
+        bg["properties"] = props
+        boundary_changed = True
+
+    if boundary_changed:
+        field.boundary_geojson = bg
+
+    # 4. Update area
+    if req.area_acres is not None:
+        field.area_acres = req.area_acres
+        field.area_sqm = req.area_sqm or round(req.area_acres * 4046.85642, 2)
+    elif req.area_sqm is not None:
+        field.area_sqm = req.area_sqm
+        field.area_acres = round(req.area_sqm / 4046.85642, 2)
+
+    # 5. Centroid recalculation
+    if req.center_latitude is not None and req.center_longitude is not None:
+        field.center_latitude = req.center_latitude
+        field.center_longitude = req.center_longitude
+    elif boundary_changed and field.boundary_geojson:
+        lat, lng = calculate_centroid(field.boundary_geojson)
+        field.center_latitude = lat
+        field.center_longitude = lng
+    elif req.center_latitude is not None:
+        field.center_latitude = req.center_latitude
+    elif req.center_longitude is not None:
+        field.center_longitude = req.center_longitude
+
+    db.commit()
+    db.refresh(field)
+    return field
+
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_field(
     field_id: str,
