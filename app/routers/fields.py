@@ -10,6 +10,8 @@ from app.schemas.field import (
     FieldCreateRequest,
     FieldUpdateRequest,
     FieldResponse,
+    MAX_FIELD_ACRES,
+    MAX_FIELD_SQM,
 )
 from app.core.dependencies import get_current_user
 
@@ -62,7 +64,13 @@ def create_field(
         center_lat, center_lng = calculate_centroid(req.boundary_geojson)
 
     # 1 Acre = 4046.85642 Sq Meters
-    area_sqm = req.area_sqm or round(req.area_acres * 4046.85642, 2)
+    area_acres = round(req.area_acres, 2)
+    area_sqm = round(req.area_sqm or (area_acres * 4046.85642), 2)
+    if area_acres > MAX_FIELD_ACRES or area_sqm > MAX_FIELD_SQM:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Field area ({area_acres:,.2f} acres) exceeds the maximum allowed limit of {MAX_FIELD_ACRES:,.0f} acres. Please demarcate a smaller farm parcel.",
+        )
 
     # Determine city/district code from user profile
     district_clean = (current_user.district or "FSD").split("/")[0].strip().upper()
@@ -84,7 +92,7 @@ def create_field(
         user_id=current_user.user_id,
         field_name=req.field_name,
         shape_type=req.shape_type,
-        area_acres=req.area_acres,
+        area_acres=area_acres,
         area_sqm=area_sqm,
         boundary_geojson=req.boundary_geojson,
         center_latitude=center_lat,

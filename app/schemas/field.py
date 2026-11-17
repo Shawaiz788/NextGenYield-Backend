@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator, ConfigD
 from typing import Optional, List, Any, Dict
 from datetime import datetime
 
+MAX_FIELD_ACRES = 5000.0
+MAX_FIELD_SQM = 25_000_000.0
+
 # Attach soil_texture property to ORM Field model dynamically so from_attributes can resolve it
 try:
     from app.models.field import Field as ORMField
@@ -18,10 +21,28 @@ class FieldCreateRequest(BaseModel):
     field_name: str = Field(..., min_length=2, max_length=50, description="Display name for field parcel")
     shape_type: str = Field(..., description="square, rectangle, polygon, or circle")
     area_acres: float = Field(..., gt=0, description="Calculated area in acres")
-    area_sqm: Optional[float] = Field(None, description="Calculated area in square meters")
+    area_sqm: Optional[float] = Field(None, gt=0, description="Calculated area in square meters")
     boundary_geojson: Dict[str, Any] = Field(..., description="RFC 7946 GeoJSON boundary polygon")
     center_latitude: Optional[float] = Field(None, description="Centroid latitude")
     center_longitude: Optional[float] = Field(None, description="Centroid longitude")
+
+    @field_validator("area_acres")
+    @classmethod
+    def validate_area_acres(cls, v: float) -> float:
+        if v > MAX_FIELD_ACRES:
+            raise ValueError(
+                f"Field area ({v:,.2f} acres) exceeds the maximum allowed limit of {MAX_FIELD_ACRES:,.0f} acres. Please demarcate a smaller farm parcel."
+            )
+        return round(v, 2)
+
+    @field_validator("area_sqm")
+    @classmethod
+    def validate_area_sqm(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v > MAX_FIELD_SQM:
+            raise ValueError(
+                f"Field area in square meters exceeds the maximum allowed limit ({MAX_FIELD_ACRES:,.0f} acres)."
+            )
+        return round(v, 2) if v is not None else None
 
     @field_validator("shape_type")
     @classmethod
@@ -36,12 +57,30 @@ class FieldUpdateRequest(BaseModel):
     field_name: Optional[str] = Field(None, min_length=2, max_length=50, description="Updated display name")
     shape_type: Optional[str] = Field(None, description="square, rectangle, polygon, or circle")
     area_acres: Optional[float] = Field(None, gt=0, description="Updated area in acres")
-    area_sqm: Optional[float] = Field(None, description="Updated area in square meters")
+    area_sqm: Optional[float] = Field(None, gt=0, description="Updated area in square meters")
     boundary_geojson: Optional[Dict[str, Any]] = Field(None, description="RFC 7946 GeoJSON boundary polygon")
     coordinates: Optional[List[Any]] = Field(None, description="Raw coordinates list e.g. [[lng, lat], ...]")
     center_latitude: Optional[float] = Field(None, description="Centroid latitude")
     center_longitude: Optional[float] = Field(None, description="Centroid longitude")
     soil_texture: Optional[str] = Field(None, description="Agronomic soil classification e.g. Clay Loam, Sandy Loam")
+
+    @field_validator("area_acres")
+    @classmethod
+    def validate_update_area_acres(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v > MAX_FIELD_ACRES:
+            raise ValueError(
+                f"Field area ({v:,.2f} acres) exceeds the maximum allowed limit of {MAX_FIELD_ACRES:,.0f} acres."
+            )
+        return round(v, 2) if v is not None else None
+
+    @field_validator("area_sqm")
+    @classmethod
+    def validate_update_area_sqm(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v > MAX_FIELD_SQM:
+            raise ValueError(
+                f"Field area in square meters exceeds the maximum allowed limit ({MAX_FIELD_ACRES:,.0f} acres)."
+            )
+        return round(v, 2) if v is not None else None
 
     @field_validator("shape_type")
     @classmethod
