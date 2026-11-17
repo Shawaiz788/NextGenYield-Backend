@@ -215,7 +215,11 @@ def delete_field(
     ).first()
     if not field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
-    
+
+    if field.current_cycle_id is not None:
+        field.current_cycle_id = None
+        db.flush()
+
     db.delete(field)
     db.commit()
     return None
