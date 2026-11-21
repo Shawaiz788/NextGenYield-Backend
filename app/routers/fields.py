@@ -100,7 +100,7 @@ def enrich_field_with_cycle(f: Field, db: Session) -> Field:
 
 @router.get("/", response_model=List[FieldResponse])
 def get_user_fields(
-    include_community: bool = Query(True, description="Include community neighbor fields on the map"),
+    include_community: bool = Query(False, description="Include community neighbor fields on the map"),
     user_id: Optional[str] = Query(None, description="Filter fields by a specific farmer"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
