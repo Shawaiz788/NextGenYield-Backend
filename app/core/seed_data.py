@@ -8,6 +8,10 @@ import logging
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, Base, engine
 from app.models.advisory import AgronomicAdvisoryRule, PeerShowcaseField
+from app.models.user import User
+from app.models.machinery import MachineryListing
+from app.models.marketplace import MarketplaceItem
+from app.models.community import CommunityPost
 
 logger = logging.getLogger("NextGenYield:Seed")
 
@@ -187,6 +191,164 @@ def seed_showcase_fields(db: Session) -> int:
     db.commit()
     return upserted
 
+def seed_community_machinery_marketplace(db: Session):
+    """Seed sample machinery rentals, marketplace listings, and community posts."""
+    # Ensure demo seed user exists
+    demo_user = db.query(User).filter(User.phone_number == "03001234567").first()
+    if not demo_user:
+        demo_user = User(
+            user_id="usr_punjab_agri_demo",
+            full_name="Chaudhry Riaz Agri",
+            phone_number="03001234567",
+            password_hash="$2b$12$eXoG1qfVpY8M9kX5s3BZe.9/J5s7u9X3B5/oV6c2aJ8yG9x2/d6k2",
+            role="farmer",
+            district="Faisalabad",
+            language_pref="en"
+        )
+        db.add(demo_user)
+        db.commit()
+        db.refresh(demo_user)
+
+    # Seed Machinery Listings
+    mach_items = [
+        {
+            "machinery_id": "mach_seed_01",
+            "owner_id": demo_user.user_id,
+            "title": "Millat MF-385 (85 HP) + Laser Land Leveler",
+            "machinery_type": "laser_leveler",
+            "brand_model": "Massey Ferguson 385 (Millat)",
+            "horsepower": 85.0,
+            "hourly_rate_pkr": 2500.0,
+            "daily_rate_pkr": 18000.0,
+            "district": "Faisalabad",
+            "location_address": "Samundri Road, Near Grain Market",
+            "contact_phone": "03001234567",
+            "description": "High precision dual-slope laser transmitter with hydraulic scraper bucket. Ideal for wheat field pre-sowing leveling.",
+            "image_url": "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=600",
+            "is_available": True,
+        },
+        {
+            "machinery_id": "mach_seed_02",
+            "owner_id": demo_user.user_id,
+            "title": "Al-Ghazi New Holland 640 + Heavy Rotavator",
+            "machinery_type": "rotavator",
+            "brand_model": "New Holland 640 (75 HP)",
+            "horsepower": 75.0,
+            "hourly_rate_pkr": 2000.0,
+            "daily_rate_pkr": 14000.0,
+            "district": "Sheikhupura",
+            "location_address": "Chuharkana Tehsil, Sheikhupura",
+            "contact_phone": "03007654321",
+            "description": "48-blade rotary tiller for fine seedbed preparation after Rauni watering. Pulverizes heavy clods effectively.",
+            "image_url": "https://images.unsplash.com/photo-1589923188900-85dae523342b?w=600",
+            "is_available": True,
+        },
+        {
+            "machinery_id": "mach_seed_03",
+            "owner_id": demo_user.user_id,
+            "title": "Automatic 11-Row Wheat Seed Drill (Rabi Sowing)",
+            "machinery_type": "seed_drill",
+            "brand_model": "Punjab Agri Tools Drill",
+            "horsepower": 50.0,
+            "hourly_rate_pkr": 1200.0,
+            "daily_rate_pkr": 7500.0,
+            "district": "Sahiwal",
+            "location_address": "Gamber, Sahiwal District",
+            "contact_phone": "03019876543",
+            "description": "Uniform seed depth (2-3 inches) with fertilizer placement chamber for simultaneous basal DAP drilling.",
+            "image_url": "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=600",
+            "is_available": True,
+        }
+    ]
+    for m in mach_items:
+        if not db.query(MachineryListing).filter(MachineryListing.machinery_id == m["machinery_id"]).first():
+            db.add(MachineryListing(**m))
+
+    # Seed Community Posts
+    posts = [
+        {
+            "post_id": "post_seed_01",
+            "user_id": demo_user.user_id,
+            "author_name": demo_user.full_name,
+            "author_district": "Faisalabad",
+            "category": "agronomy_tips",
+            "title": "Optimal Sowing Window for Punjab Wheat 2026",
+            "content": "Agronomy advisory: For central Punjab farmers, November 1st to 20th provides the highest tillering potential for Akbar-2019 and Dilkash-20. Sowing delayed past Nov 30 reduces yield by 1% per day due to terminal heat stress during grain filling.",
+            "image_url": "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=600",
+            "likes_count": 14,
+            "comments_count": 3
+        },
+        {
+            "post_id": "post_seed_02",
+            "user_id": demo_user.user_id,
+            "author_name": "Malik Usman",
+            "author_district": "Sheikhupura",
+            "category": "machinery",
+            "title": "Laser Land Leveling Experience Before Sowing",
+            "content": "Laser leveled our 15-acre plot before Rauni watering this season. Saved nearly 35% tube-well diesel cost and water coverage was completely uniform across all corners. Highly recommend hiring a laser leveler!",
+            "image_url": "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=600",
+            "likes_count": 22,
+            "comments_count": 5
+        }
+    ]
+    for p in posts:
+        if not db.query(CommunityPost).filter(CommunityPost.post_id == p["post_id"]).first():
+            db.add(CommunityPost(**p))
+
+    # Seed Marketplace Items
+    market_items = [
+        {
+            "item_id": "mkt_seed_01",
+            "seller_id": demo_user.user_id,
+            "seller_name": demo_user.full_name,
+            "seller_phone": "03001234567",
+            "title": "Certified Akbar-2019 Wheat Seed (50 kg Bag)",
+            "category": "seeds",
+            "price_pkr": 4850.0,
+            "condition": "new",
+            "district": "Faisalabad",
+            "location_address": "Punjab Seed Corp Authorized Depot, Jhang Road",
+            "description": "Graded, treated with fungicide, certified germination rate >90%. Ideal for irrigated areas.",
+            "image_url": "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=600",
+            "is_sold": False,
+        },
+        {
+            "item_id": "mkt_seed_02",
+            "seller_id": demo_user.user_id,
+            "seller_name": demo_user.full_name,
+            "seller_phone": "03001234567",
+            "title": "Engro DAP Di-Ammonium Phosphate (50 kg)",
+            "category": "fertilizer",
+            "price_pkr": 14300.0,
+            "condition": "new",
+            "district": "Faisalabad",
+            "location_address": "Grain Market, Shop #12",
+            "description": "Original sealed bags with subsidy barcode. High phosphorus (46% P2O5, 18% N) for strong basal root establishment.",
+            "image_url": "https://images.unsplash.com/photo-1585314062340-f1a5a7c9328d?w=600",
+            "is_sold": False,
+        },
+        {
+            "item_id": "mkt_seed_03",
+            "seller_id": demo_user.user_id,
+            "seller_name": "Tariq Mahmood",
+            "seller_phone": "03023456789",
+            "title": "Top Grade Milling Wheat (100 Maunds Available)",
+            "category": "wheat_grain",
+            "price_pkr": 3950.0,
+            "condition": "new",
+            "district": "Sargodha",
+            "location_address": "Bhalwal Mandi, Sargodha",
+            "description": "Clean, sun-dried grain, moisture level <11.5%. Harvested April 2026, stored in fumigated silo bags.",
+            "image_url": "https://images.unsplash.com/photo-1543257580-7269da773bf5?w=600",
+            "is_sold": False,
+        }
+    ]
+    for itm in market_items:
+        if not db.query(MarketplaceItem).filter(MarketplaceItem.item_id == itm["item_id"]).first():
+            db.add(MarketplaceItem(**itm))
+
+    db.commit()
+
 def seed():
     """Execute schema creation and idempotent seed data population."""
     Base.metadata.create_all(bind=engine)
@@ -194,6 +356,7 @@ def seed():
     try:
         rules_count = seed_advisory_rules(db)
         showcase_count = seed_showcase_fields(db)
+        seed_community_machinery_marketplace(db)
         logger.info(f"Database seeded successfully: {rules_count} advisory rules, {showcase_count} showcase fields.")
     except Exception as e:
         db.rollback()

@@ -8,7 +8,7 @@ import logging
 from app.config import settings
 from app.database import engine, Base
 from app.core.seed_data import seed
-from app.routers import auth, fields, crop_cycles, observations, advisory
+from app.routers import auth, fields, crop_cycles, observations, advisory, machinery, employees, community, marketplace
 
 logger = logging.getLogger("NextGenYield:Backend")
 
@@ -54,6 +54,10 @@ app.include_router(crop_cycles.router, prefix=settings.API_V1_STR)
 app.include_router(observations.router, prefix=settings.API_V1_STR)
 app.include_router(advisory.router, prefix=settings.API_V1_STR)
 app.include_router(advisory.showcase_router, prefix=settings.API_V1_STR)
+app.include_router(machinery.router, prefix=settings.API_V1_STR)
+app.include_router(employees.router, prefix=settings.API_V1_STR)
+app.include_router(community.router, prefix=settings.API_V1_STR)
+app.include_router(marketplace.router, prefix=settings.API_V1_STR)
 
 # Static file serving for local fallback storage
 LOCAL_UPLOADS_DIR = os.path.join(os.getcwd(), "uploads")

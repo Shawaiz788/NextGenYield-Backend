@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.field import Field
 from app.models.crop_cycle import CropCycle
+from app.models.employee import FarmEmployee, FieldAssignment
 from app.schemas.field import (
     FieldCreateRequest,
     FieldUpdateRequest,
@@ -41,9 +42,30 @@ def get_user_fields(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List all demarcated farm parcels belonging to the logged-in farmer."""
-    fields = db.query(Field).filter(Field.user_id == current_user.user_id).all()
-    return fields
+    """List all demarcated farm parcels belonging to or assigned to the logged-in user."""
+    owned_fields = db.query(Field).filter(Field.user_id == current_user.user_id).all()
+    field_dict = {f.field_id: f for f in owned_fields}
+
+    # Check if current user is delegated any fields as an employee
+    emp_records = db.query(FarmEmployee).filter(
+        (FarmEmployee.employee_user_id == current_user.user_id) |
+        (FarmEmployee.employee_phone == current_user.phone_number)
+    ).all()
+
+    for emp in emp_records:
+        if emp.access_all_fields:
+            owner_fields = db.query(Field).filter(Field.user_id == emp.owner_id).all()
+            for f in owner_fields:
+                field_dict[f.field_id] = f
+        else:
+            assignments = db.query(FieldAssignment).filter(FieldAssignment.employee_record_id == emp.employee_record_id).all()
+            for a in assignments:
+                if a.field_id not in field_dict:
+                    f = db.query(Field).filter(Field.field_id == a.field_id).first()
+                    if f:
+                        field_dict[f.field_id] = f
+
+    return list(field_dict.values())
 
 @router.post("/", response_model=FieldResponse, status_code=status.HTTP_201_CREATED)
 def create_field(
@@ -111,12 +133,26 @@ def get_field_details(
     db: Session = Depends(get_db)
 ):
     """Fetch specific parcel details."""
-    field = db.query(Field).filter(
-        Field.field_id == field_id,
-        Field.user_id == current_user.user_id
-    ).first()
+    field = db.query(Field).filter(Field.field_id == field_id).first()
     if not field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
+    
+    if field.user_id != current_user.user_id:
+        # Check if delegated to employee
+        emp = db.query(FarmEmployee).filter(
+            ((FarmEmployee.employee_user_id == current_user.user_id) |
+             (FarmEmployee.employee_phone == current_user.phone_number)),
+            FarmEmployee.owner_id == field.user_id
+        ).first()
+        if not emp:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        if not emp.access_all_fields:
+            assignment = db.query(FieldAssignment).filter(
+                FieldAssignment.employee_record_id == emp.employee_record_id,
+                FieldAssignment.field_id == field_id
+            ).first()
+            if not assignment:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Field not assigned to you")
     return field
 
 @router.put("/{field_id}", response_model=FieldResponse)

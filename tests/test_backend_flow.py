@@ -474,3 +474,174 @@ def test_observation_upload_and_retrieval(auth_headers, active_field_and_cycle):
         headers=auth_headers
     )
     assert bad_upload_resp.status_code == 404
+
+
+# ==============================================================================
+# New Feature Integration Tests (Machinery, Employees, Community, Marketplace)
+# ==============================================================================
+
+def test_machinery_rental_and_booking_flow(auth_headers):
+    """Verify machinery listing, filtering, booking, and price estimation."""
+    # 1. Create a machinery listing
+    create_payload = {
+        "title": "Al-Ghazi Laser Leveler Setup",
+        "machinery_type": "laser_leveler",
+        "brand_model": "NH 640 + Dual Transmitter",
+        "horsepower": 75.0,
+        "hourly_rate_pkr": 2500.0,
+        "daily_rate_pkr": 18000.0,
+        "district": "Faisalabad",
+        "location_address": "Chak 214 RB, Faisalabad",
+        "contact_phone": "03001234567",
+        "description": "High precision leveling bucket"
+    }
+    create_resp = client.post("/api/v1/machinery/", json=create_payload, headers=auth_headers)
+    assert create_resp.status_code == 201
+    mach_data = create_resp.json()
+    mach_id = mach_data["machinery_id"]
+    assert mach_id.startswith("mach_")
+    assert mach_data["daily_rate_pkr"] == 18000.0
+
+    # 2. List machinery with type filter
+    list_resp = client.get("/api/v1/machinery/?machinery_type=laser_leveler", headers=auth_headers)
+    assert list_resp.status_code == 200
+    listings = list_resp.json()
+    assert len(listings) >= 1
+
+    # 3. Book a 2-day slot
+    from datetime import datetime, timedelta
+    start = datetime.utcnow() + timedelta(days=1)
+    end = start + timedelta(days=2)
+    book_payload = {
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "purpose_step": "laser_leveling",
+        "notes": "Pre-sowing leveling for wheat parcel"
+    }
+    book_resp = client.post(f"/api/v1/machinery/{mach_id}/book", json=book_payload, headers=auth_headers)
+    assert book_resp.status_code == 201
+    booking = book_resp.json()
+    assert booking["booking_id"].startswith("book_")
+    assert booking["status"] == "confirmed"
+    assert booking["total_amount_pkr"] >= 18000.0
+
+    # 4. View user bookings
+    my_bookings = client.get("/api/v1/machinery/user/my-bookings", headers=auth_headers)
+    assert my_bookings.status_code == 200
+    assert len(my_bookings.json()) >= 1
+
+
+def test_farm_employee_delegation_flow(auth_headers, active_field_and_cycle):
+    """Verify owner adding employee, delegating fields, and employee field query."""
+    field_id = active_field_and_cycle["field_id"]
+
+    # 1. Add employee
+    emp_payload = {
+        "employee_name": "Bashir Ahmad",
+        "employee_phone": "03008765432",
+        "role": "farmhand",
+        "access_all_fields": False,
+        "assigned_field_ids": [field_id]
+    }
+    emp_resp = client.post("/api/v1/employees/", json=emp_payload, headers=auth_headers)
+    assert emp_resp.status_code == 201
+    emp_data = emp_resp.json()
+    emp_id = emp_data["employee_record_id"]
+    assert emp_id.startswith("emp_")
+    assert len(emp_data["assigned_fields"]) == 1
+    assert emp_data["assigned_fields"][0]["field_id"] == field_id
+
+    # 2. List employees
+    list_resp = client.get("/api/v1/employees/", headers=auth_headers)
+    assert list_resp.status_code == 200
+    assert any(e["employee_record_id"] == emp_id for e in list_resp.json())
+
+    # 3. Re-assign to all fields
+    assign_resp = client.post(
+        f"/api/v1/employees/{emp_id}/assign-fields",
+        json={"field_ids": [], "access_all_fields": True},
+        headers=auth_headers
+    )
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["access_all_fields"] is True
+
+    # 4. Delete employee
+    del_resp = client.delete(f"/api/v1/employees/{emp_id}", headers=auth_headers)
+    assert del_resp.status_code == 204
+
+
+def test_community_posts_and_chat_flow(auth_headers):
+    """Verify community posting, liking, commenting, and direct messaging."""
+    # 1. Create a community post
+    post_payload = {
+        "title": "Best Fertilizer Timing for Akbar-2019",
+        "category": "agronomy_tips",
+        "content": "Split urea 3x: 1/3 at sowing, 1/3 at 1st watering, 1/3 at booting."
+    }
+    post_resp = client.post("/api/v1/community/posts", json=post_payload, headers=auth_headers)
+    assert post_resp.status_code == 201
+    post_data = post_resp.json()
+    post_id = post_data["post_id"]
+    assert post_id.startswith("post_")
+    assert post_data["likes_count"] == 0
+
+    # 2. Toggle like
+    like_resp = client.post(f"/api/v1/community/posts/{post_id}/like", headers=auth_headers)
+    assert like_resp.status_code == 200
+    assert like_resp.json()["liked"] is True
+    assert like_resp.json()["likes_count"] == 1
+
+    # 3. Add comment
+    cmt_resp = client.post(
+        f"/api/v1/community/posts/{post_id}/comments",
+        json={"content": "Very helpful advice, thank you!"},
+        headers=auth_headers
+    )
+    assert cmt_resp.status_code == 201
+    assert cmt_resp.json()["content"] == "Very helpful advice, thank you!"
+
+    # 4. List comments
+    cmts = client.get(f"/api/v1/community/posts/{post_id}/comments", headers=auth_headers)
+    assert cmts.status_code == 200
+    assert len(cmts.json()) >= 1
+
+    # 5. List conversations
+    convs = client.get("/api/v1/community/conversations", headers=auth_headers)
+    assert convs.status_code == 200
+
+
+def test_marketplace_items_flow(auth_headers):
+    """Verify Facebook-style marketplace listing, filtering, and sold toggle."""
+    # 1. Create product listing
+    item_payload = {
+        "title": "Certified Dilkash-20 Wheat Seed 50kg",
+        "category": "seeds",
+        "price_pkr": 4900.0,
+        "condition": "new",
+        "district": "Faisalabad",
+        "location_address": "Grain Market Shop #5",
+        "contact_phone": "03009988776",
+        "description": "Punjab Seed Corp certified, germination rate 92%"
+    }
+    create_resp = client.post("/api/v1/marketplace/items", json=item_payload, headers=auth_headers)
+    assert create_resp.status_code == 201
+    item_data = create_resp.json()
+    item_id = item_data["item_id"]
+    assert item_id.startswith("item_")
+    assert item_data["price_pkr"] == 4900.0
+
+    # 2. Browse items with category filter
+    items_resp = client.get("/api/v1/marketplace/items?category=seeds", headers=auth_headers)
+    assert items_resp.status_code == 200
+    items = items_resp.json()
+    assert any(i["item_id"] == item_id for i in items)
+
+    # 3. Toggle item as sold
+    sold_resp = client.patch(f"/api/v1/marketplace/items/{item_id}/sold", headers=auth_headers)
+    assert sold_resp.status_code == 200
+    assert sold_resp.json()["is_sold"] is True
+
+    # 4. Delete item
+    del_resp = client.delete(f"/api/v1/marketplace/items/{item_id}", headers=auth_headers)
+    assert del_resp.status_code == 204
+
