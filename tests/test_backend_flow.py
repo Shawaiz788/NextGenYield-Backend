@@ -645,3 +645,67 @@ def test_marketplace_items_flow(auth_headers):
     del_resp = client.delete(f"/api/v1/marketplace/items/{item_id}", headers=auth_headers)
     assert del_resp.status_code == 204
 
+
+def test_public_user_profile_and_disconnect_flow(auth_headers):
+    """Verify retrieval of public farmer profile, friendship connect and disconnect."""
+    # 1. Fetch current user info to get user_id
+    me_resp = client.get("/api/v1/auth/me", headers=auth_headers)
+    assert me_resp.status_code == 200
+    my_user_id = me_resp.json()["user_id"]
+
+    # 2. Get own profile -> connection_status should be 'self'
+    self_profile_resp = client.get(f"/api/v1/community/users/{my_user_id}/profile", headers=auth_headers)
+    assert self_profile_resp.status_code == 200
+    self_profile = self_profile_resp.json()
+    assert self_profile["user_id"] == my_user_id
+    assert self_profile["connection_status"] == "self"
+    assert "total_fields" in self_profile
+    assert "total_acreage" in self_profile
+    assert "posts_count" in self_profile
+
+    # 3. Create or register a secondary peer farmer
+    peer_phone = "03011122334"
+    client.post("/api/v1/auth/register", json={
+        "full_name": "Peer Farmer Ali",
+        "phone_number": peer_phone,
+        "password": "pass1234password",
+        "role": "farmer",
+        "district": "Sargodha",
+        "language_pref": "ur"
+    })
+    peer_login = client.post("/api/v1/auth/login", json={
+        "phone_number": peer_phone,
+        "password": "pass1234password"
+    })
+    assert peer_login.status_code == 200
+    peer_token = peer_login.json()["access_token"]
+    peer_headers = {"Authorization": f"Bearer {peer_token}"}
+    peer_me = client.get("/api/v1/auth/me", headers=peer_headers).json()
+    peer_user_id = peer_me["user_id"]
+
+    # 4. View peer profile before connecting -> connection_status should be 'none'
+    peer_prof = client.get(f"/api/v1/community/users/{peer_user_id}/profile", headers=auth_headers)
+    assert peer_prof.status_code == 200
+    assert peer_prof.json()["connection_status"] == "none"
+
+    # 5. Connect with peer farmer
+    conn_resp = client.post(f"/api/v1/community/farmers/{peer_user_id}/connect", headers=auth_headers)
+    assert conn_resp.status_code == 200
+    assert conn_resp.json()["status"] == "accepted"
+
+    # 6. View peer profile after connecting -> connection_status should be 'accepted'
+    peer_prof2 = client.get(f"/api/v1/community/users/{peer_user_id}/profile", headers=auth_headers)
+    assert peer_prof2.status_code == 200
+    assert peer_prof2.json()["connection_status"] == "accepted"
+
+    # 7. Disconnect with peer farmer
+    disc_resp = client.delete(f"/api/v1/community/farmers/{peer_user_id}/disconnect", headers=auth_headers)
+    assert disc_resp.status_code == 200
+    assert disc_resp.json()["status"] == "none"
+
+    # 8. View peer profile after disconnect -> connection_status should be 'none'
+    peer_prof3 = client.get(f"/api/v1/community/users/{peer_user_id}/profile", headers=auth_headers)
+    assert peer_prof3.status_code == 200
+    assert peer_prof3.json()["connection_status"] == "none"
+
+

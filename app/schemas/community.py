@@ -52,6 +52,21 @@ class UserConnectionResponse(BaseModel):
     status: str
     created_at: datetime
 
+class PublicUserProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: str
+    full_name: str
+    district: str
+    role: str
+    phone_number: Optional[str] = None
+    total_fields: int = 0
+    total_acreage: float = 0.0
+    posts_count: int = 0
+    connection_status: str = "none"  # "none", "pending", "accepted", "self"
+    connection_id: Optional[str] = None
+    created_at: datetime
+
 class SendMessageRequest(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

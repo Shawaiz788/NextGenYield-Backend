@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models.user import User
+from app.models.field import Field
 from app.models.community import (
     CommunityPost,
     PostComment,
@@ -20,6 +21,7 @@ from app.schemas.community import (
     CommentCreateRequest,
     CommentResponse,
     UserConnectionResponse,
+    PublicUserProfileResponse,
     SendMessageRequest,
     MessageResponse,
     ConversationResponse,
@@ -250,6 +252,63 @@ def connect_with_farmer(
     db.add(conn)
     db.commit()
     return {"status": "accepted", "connection_id": conn.connection_id}
+
+@router.delete("/farmers/{target_user_id}/disconnect")
+def disconnect_with_farmer(
+    target_user_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove friend connection with a farmer."""
+    conn = db.query(UserConnection).filter(
+        ((UserConnection.requester_id == current_user.user_id) & (UserConnection.target_id == target_user_id)) |
+        ((UserConnection.requester_id == target_user_id) & (UserConnection.target_id == current_user.user_id))
+    ).first()
+    if conn:
+        db.delete(conn)
+        db.commit()
+    return {"status": "none"}
+
+@router.get("/users/{user_id}/profile", response_model=PublicUserProfileResponse)
+def get_user_public_profile(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retrieve public farmer profile with farm overview and friendship status."""
+    target_user = db.query(User).filter(User.user_id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Farmer profile not found.")
+
+    if target_user.user_id == current_user.user_id:
+        conn_status = "self"
+        conn_id = None
+    else:
+        conn = db.query(UserConnection).filter(
+            ((UserConnection.requester_id == current_user.user_id) & (UserConnection.target_id == user_id)) |
+            ((UserConnection.requester_id == user_id) & (UserConnection.target_id == current_user.user_id))
+        ).first()
+        conn_status = conn.status if conn else "none"
+        conn_id = conn.connection_id if conn else None
+
+    # Aggregate fields and acreage
+    fields = db.query(Field).filter(Field.user_id == user_id).all()
+    total_acres = round(sum(f.area_acres for f in fields), 1) if fields else 0.0
+    posts_count = db.query(CommunityPost).filter(CommunityPost.user_id == user_id).count()
+
+    return PublicUserProfileResponse(
+        user_id=target_user.user_id,
+        full_name=target_user.full_name,
+        district=target_user.district or "Punjab",
+        role=target_user.role or "Progressive Wheat Farmer",
+        phone_number=target_user.phone_number,
+        total_fields=len(fields),
+        total_acreage=total_acres,
+        posts_count=posts_count,
+        connection_status=conn_status,
+        connection_id=conn_id,
+        created_at=target_user.created_at
+    )
 
 # --- DIRECT MESSAGING / CHAT ---
 
