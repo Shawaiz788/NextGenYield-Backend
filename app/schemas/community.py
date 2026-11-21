@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, ForwardRef
 from datetime import datetime
+from app.schemas.field import FieldResponse
 
 class PostCreateRequest(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -65,6 +66,7 @@ class PublicUserProfileResponse(BaseModel):
     posts_count: int = 0
     connection_status: str = "none"  # "none", "pending", "accepted", "self"
     connection_id: Optional[str] = None
+    fields: List[FieldResponse] = []
     created_at: datetime
 
 class SendMessageRequest(BaseModel):

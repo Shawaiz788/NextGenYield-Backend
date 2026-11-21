@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import uuid
 from app.database import get_db
@@ -100,10 +100,27 @@ def enrich_field_with_cycle(f: Field, db: Session) -> Field:
 
 @router.get("/", response_model=List[FieldResponse])
 def get_user_fields(
+    include_community: bool = Query(True, description="Include community neighbor fields on the map"),
+    user_id: Optional[str] = Query(None, description="Filter fields by a specific farmer"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List all demarcated farm parcels belonging to or assigned to the logged-in user."""
+    """List all demarcated farm parcels belonging to the user, specific farmer, or community map."""
+    if user_id:
+        target_user = db.query(User).filter(User.user_id == user_id).first()
+        if not target_user:
+            return []
+        target_fields = db.query(Field).filter(Field.user_id == user_id).all()
+        enriched = []
+        for f in target_fields:
+            ef = enrich_field_with_cycle(f, db)
+            ef.owner_id = target_user.user_id
+            ef.owner_name = target_user.full_name
+            ef.owner_district = target_user.district
+            ef.is_mine = (target_user.user_id == current_user.user_id)
+            enriched.append(ef)
+        return enriched
+
     owned_fields = db.query(Field).filter(Field.user_id == current_user.user_id).all()
     field_dict = {f.field_id: f for f in owned_fields}
 
@@ -126,7 +143,36 @@ def get_user_fields(
                     if f:
                         field_dict[f.field_id] = f
 
-    return [enrich_field_with_cycle(f, db) for f in field_dict.values()]
+    result = []
+    for f in field_dict.values():
+        ef = enrich_field_with_cycle(f, db)
+        ef.owner_id = current_user.user_id
+        ef.owner_name = current_user.full_name
+        ef.owner_district = current_user.district
+        ef.is_mine = True
+        result.append(ef)
+
+    if include_community:
+        # Retrieve neighbor / community fields from other registered farmers
+        owned_keys = list(field_dict.keys())
+        comm_query = db.query(Field)
+        if owned_keys:
+            comm_query = comm_query.filter(~Field.field_id.in_(owned_keys))
+        comm_fields = comm_query.order_by(Field.created_at.desc()).limit(30).all()
+
+        user_cache = {}
+        for cf in comm_fields:
+            if cf.user_id not in user_cache:
+                user_cache[cf.user_id] = db.query(User).filter(User.user_id == cf.user_id).first()
+            owner = user_cache[cf.user_id]
+            ef = enrich_field_with_cycle(cf, db)
+            ef.owner_id = cf.user_id
+            ef.owner_name = owner.full_name if owner else "Punjab Farmer"
+            ef.owner_district = owner.district if owner else "Faisalabad"
+            ef.is_mine = False
+            result.append(ef)
+
+    return result
 
 @router.post("/", response_model=FieldResponse, status_code=status.HTTP_201_CREATED)
 def create_field(

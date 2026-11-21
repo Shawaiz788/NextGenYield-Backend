@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.machinery import MachineryListing
 from app.models.marketplace import MarketplaceItem
 from app.models.community import CommunityPost
+from app.models.field import Field
 
 logger = logging.getLogger("NextGenYield:Seed")
 
@@ -349,6 +350,65 @@ def seed_community_machinery_marketplace(db: Session):
 
     db.commit()
 
+def seed_community_fields(db: Session):
+    """Ensure community demo farmers have demarcated fields with coordinates on the Leaflet map."""
+    demo_user = db.query(User).filter(User.phone_number == "03001234567").first()
+    if not demo_user:
+        return
+
+    sample_parcels = [
+        {
+            "field_id": "fld_seed_comm_01",
+            "field_code": "PK-FSD-C1",
+            "user_id": demo_user.user_id,
+            "field_name": "Canal Block North",
+            "shape_type": "polygon",
+            "area_acres": 12.5,
+            "area_sqm": 50585.7,
+            "center_latitude": 31.4225,
+            "center_longitude": 73.0755,
+            "boundary_geojson": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [73.0735, 31.4210],
+                    [73.0775, 31.4210],
+                    [73.0775, 31.4240],
+                    [73.0735, 31.4240],
+                    [73.0735, 31.4210]
+                ]],
+                "properties": {"soil_texture": "Sandy Loam"}
+            }
+        },
+        {
+            "field_id": "fld_seed_comm_02",
+            "field_code": "PK-FSD-C2",
+            "user_id": demo_user.user_id,
+            "field_name": "Chak 204 South Plot",
+            "shape_type": "polygon",
+            "area_acres": 8.0,
+            "area_sqm": 32374.8,
+            "center_latitude": 31.4150,
+            "center_longitude": 73.0825,
+            "boundary_geojson": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [73.0805, 31.4135],
+                    [73.0845, 31.4135],
+                    [73.0845, 31.4165],
+                    [73.0805, 31.4165],
+                    [73.0805, 31.4135]
+                ]],
+                "properties": {"soil_texture": "Clay Loam"}
+            }
+        }
+    ]
+
+    for p in sample_parcels:
+        if not db.query(Field).filter(Field.field_id == p["field_id"]).first():
+            db.add(Field(**p))
+
+    db.commit()
+
 def seed():
     """Execute schema creation and idempotent seed data population."""
     Base.metadata.create_all(bind=engine)
@@ -357,6 +417,7 @@ def seed():
         rules_count = seed_advisory_rules(db)
         showcase_count = seed_showcase_fields(db)
         seed_community_machinery_marketplace(db)
+        seed_community_fields(db)
         logger.info(f"Database seeded successfully: {rules_count} advisory rules, {showcase_count} showcase fields.")
     except Exception as e:
         db.rollback()

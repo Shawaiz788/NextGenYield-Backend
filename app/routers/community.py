@@ -7,6 +7,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.user import User
 from app.models.field import Field
+from app.routers.fields import enrich_field_with_cycle
 from app.models.community import (
     CommunityPost,
     PostComment,
@@ -292,8 +293,15 @@ def get_user_public_profile(
         conn_id = conn.connection_id if conn else None
 
     # Aggregate fields and acreage
-    fields = db.query(Field).filter(Field.user_id == user_id).all()
-    total_acres = round(sum(f.area_acres for f in fields), 1) if fields else 0.0
+    raw_fields = db.query(Field).filter(Field.user_id == user_id).all()
+    enriched_fields = [enrich_field_with_cycle(f, db) for f in raw_fields]
+    for ef in enriched_fields:
+        ef.owner_name = target_user.full_name
+        ef.owner_district = target_user.district
+        ef.owner_id = target_user.user_id
+        ef.is_mine = (user_id == current_user.user_id)
+
+    total_acres = round(sum(f.area_acres for f in raw_fields), 1) if raw_fields else 0.0
     posts_count = db.query(CommunityPost).filter(CommunityPost.user_id == user_id).count()
 
     return PublicUserProfileResponse(
@@ -302,11 +310,12 @@ def get_user_public_profile(
         district=target_user.district or "Punjab",
         role=target_user.role or "Progressive Wheat Farmer",
         phone_number=target_user.phone_number,
-        total_fields=len(fields),
+        total_fields=len(raw_fields),
         total_acreage=total_acres,
         posts_count=posts_count,
         connection_status=conn_status,
         connection_id=conn_id,
+        fields=enriched_fields,
         created_at=target_user.created_at
     )
 

@@ -95,6 +95,10 @@ class FieldResponse(BaseModel):
     field_id: str
     field_code: Optional[str] = None
     user_id: str
+    owner_id: Optional[str] = None
+    owner_name: Optional[str] = None
+    owner_district: Optional[str] = None
+    is_mine: bool = True
     field_name: str
     shape_type: str
     area_acres: float
