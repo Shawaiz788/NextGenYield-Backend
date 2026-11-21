@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, Base, engine
 from app.models.advisory import AgronomicAdvisoryRule, PeerShowcaseField
 from app.models.user import User
-from app.models.machinery import MachineryListing
+from app.models.machinery import MachineryListing, MachineryBooking
 from app.models.marketplace import MarketplaceItem
 from app.models.community import CommunityPost
 from app.models.field import Field
@@ -193,8 +193,10 @@ def seed_showcase_fields(db: Session) -> int:
     return upserted
 
 def seed_community_machinery_marketplace(db: Session):
-    """Seed sample machinery rentals, marketplace listings, and community posts."""
-    # Ensure demo seed user exists
+    """Seed authentic machinery rentals, marketplace listings, community posts, and sample bookings."""
+    from datetime import datetime, timedelta
+
+    # 1. Primary Demo Farmer: Chaudhry Riaz Agri (Faisalabad)
     demo_user = db.query(User).filter(User.phone_number == "03001234567").first()
     if not demo_user:
         demo_user = User(
@@ -209,6 +211,38 @@ def seed_community_machinery_marketplace(db: Session):
         db.add(demo_user)
         db.commit()
         db.refresh(demo_user)
+
+    # 2. Secondary Demo Farmer: Malik Usman (Sheikhupura)
+    usman_user = db.query(User).filter(User.phone_number == "03007654321").first()
+    if not usman_user:
+        usman_user = User(
+            user_id="usr_sheikhupura_demo",
+            full_name="Malik Usman",
+            phone_number="03007654321",
+            password_hash="$2b$12$eXoG1qfVpY8M9kX5s3BZe.9/J5s7u9X3B5/oV6c2aJ8yG9x2/d6k2",
+            role="farmer",
+            district="Sheikhupura",
+            language_pref="ur"
+        )
+        db.add(usman_user)
+        db.commit()
+        db.refresh(usman_user)
+
+    # 3. Tertiary Demo Farmer: Tariq Mahmood (Sargodha)
+    tariq_user = db.query(User).filter(User.phone_number == "03023456789").first()
+    if not tariq_user:
+        tariq_user = User(
+            user_id="usr_sargodha_demo",
+            full_name="Tariq Mahmood",
+            phone_number="03023456789",
+            password_hash="$2b$12$eXoG1qfVpY8M9kX5s3BZe.9/J5s7u9X3B5/oV6c2aJ8yG9x2/d6k2",
+            role="farmer",
+            district="Sargodha",
+            language_pref="ur"
+        )
+        db.add(tariq_user)
+        db.commit()
+        db.refresh(tariq_user)
 
     # Seed Machinery Listings
     mach_items = [
@@ -230,7 +264,7 @@ def seed_community_machinery_marketplace(db: Session):
         },
         {
             "machinery_id": "mach_seed_02",
-            "owner_id": demo_user.user_id,
+            "owner_id": usman_user.user_id,
             "title": "Al-Ghazi New Holland 640 + Heavy Rotavator",
             "machinery_type": "rotavator",
             "brand_model": "New Holland 640 (75 HP)",
@@ -262,10 +296,53 @@ def seed_community_machinery_marketplace(db: Session):
         }
     ]
     for m in mach_items:
-        if not db.query(MachineryListing).filter(MachineryListing.machinery_id == m["machinery_id"]).first():
+        existing = db.query(MachineryListing).filter(MachineryListing.machinery_id == m["machinery_id"]).first()
+        if not existing:
             db.add(MachineryListing(**m))
+        else:
+            existing.owner_id = m["owner_id"]
+            existing.contact_phone = m["contact_phone"]
 
-    # Seed Community Posts
+    # Seed Sample Confirmed Bookings on mach_seed_01 with 1-hr buffers
+    now = datetime.utcnow()
+    # Booking 1: Tomorrow morning (08:00 - 12:00) -> Date remains Green because afternoon & evening are open
+    t_morn_start = datetime(now.year, now.month, now.day, 8, 0, 0) + timedelta(days=1)
+    t_morn_end = datetime(now.year, now.month, now.day, 12, 0, 0) + timedelta(days=1)
+    # Booking 2: In 3 days full day (08:00 - 18:00) -> Date becomes Red (Fully Booked!)
+    day3_start = datetime(now.year, now.month, now.day, 8, 0, 0) + timedelta(days=3)
+    day3_end = datetime(now.year, now.month, now.day, 18, 0, 0) + timedelta(days=3)
+
+    sample_bookings = [
+        {
+            "booking_id": "book_seed_morn_01",
+            "machinery_id": "mach_seed_01",
+            "renter_id": usman_user.user_id,
+            "start_date": t_morn_start,
+            "end_date": t_morn_end,
+            "total_hours": 4.0,
+            "total_amount_pkr": 10000.0,
+            "status": "confirmed",
+            "purpose_step": "laser_leveler",
+            "notes": "Laser land leveling before wheat sowing"
+        },
+        {
+            "booking_id": "book_seed_full_02",
+            "machinery_id": "mach_seed_01",
+            "renter_id": tariq_user.user_id,
+            "start_date": day3_start,
+            "end_date": day3_end,
+            "total_hours": 10.0,
+            "total_amount_pkr": 18000.0,
+            "status": "confirmed",
+            "purpose_step": "laser_leveler",
+            "notes": "Full day land leveling reservation"
+        }
+    ]
+    for b in sample_bookings:
+        if not db.query(MachineryBooking).filter(MachineryBooking.booking_id == b["booking_id"]).first():
+            db.add(MachineryBooking(**b))
+
+    # Seed Community Posts with Authentic Authors
     posts = [
         {
             "post_id": "post_seed_01",
@@ -281,8 +358,8 @@ def seed_community_machinery_marketplace(db: Session):
         },
         {
             "post_id": "post_seed_02",
-            "user_id": demo_user.user_id,
-            "author_name": "Malik Usman",
+            "user_id": usman_user.user_id,
+            "author_name": usman_user.full_name,
             "author_district": "Sheikhupura",
             "category": "machinery",
             "title": "Laser Land Leveling Experience Before Sowing",
@@ -290,13 +367,29 @@ def seed_community_machinery_marketplace(db: Session):
             "image_url": "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=600",
             "likes_count": 22,
             "comments_count": 5
+        },
+        {
+            "post_id": "post_seed_03",
+            "user_id": tariq_user.user_id,
+            "author_name": tariq_user.full_name,
+            "author_district": "Sargodha",
+            "category": "agronomy_tips",
+            "title": "Grain Storage and Fumigation Tips for Rabi Harvest",
+            "content": "Make sure wheat moisture is below 11.5% before bagging. Use airtight hermetic bags or phosphine fumigation to protect grains against khapra beetle and grain borers.",
+            "image_url": "https://images.unsplash.com/photo-1543257580-7269da773bf5?w=600",
+            "likes_count": 18,
+            "comments_count": 4
         }
     ]
     for p in posts:
-        if not db.query(CommunityPost).filter(CommunityPost.post_id == p["post_id"]).first():
+        existing_p = db.query(CommunityPost).filter(CommunityPost.post_id == p["post_id"]).first()
+        if not existing_p:
             db.add(CommunityPost(**p))
+        else:
+            existing_p.user_id = p["user_id"]
+            existing_p.author_name = p["author_name"]
 
-    # Seed Marketplace Items
+    # Seed Marketplace Items with Authentic Sellers
     market_items = [
         {
             "item_id": "mkt_seed_01",
@@ -330,8 +423,8 @@ def seed_community_machinery_marketplace(db: Session):
         },
         {
             "item_id": "mkt_seed_03",
-            "seller_id": demo_user.user_id,
-            "seller_name": "Tariq Mahmood",
+            "seller_id": tariq_user.user_id,
+            "seller_name": tariq_user.full_name,
             "seller_phone": "03023456789",
             "title": "Top Grade Milling Wheat (100 Maunds Available)",
             "category": "wheat_grain",
@@ -345,14 +438,21 @@ def seed_community_machinery_marketplace(db: Session):
         }
     ]
     for itm in market_items:
-        if not db.query(MarketplaceItem).filter(MarketplaceItem.item_id == itm["item_id"]).first():
+        existing_itm = db.query(MarketplaceItem).filter(MarketplaceItem.item_id == itm["item_id"]).first()
+        if not existing_itm:
             db.add(MarketplaceItem(**itm))
+        else:
+            existing_itm.seller_id = itm["seller_id"]
+            existing_itm.seller_name = itm["seller_name"]
+            existing_itm.seller_phone = itm["seller_phone"]
 
     db.commit()
 
 def seed_community_fields(db: Session):
     """Ensure community demo farmers have demarcated fields with coordinates on the Leaflet map."""
     demo_user = db.query(User).filter(User.phone_number == "03001234567").first()
+    usman_user = db.query(User).filter(User.phone_number == "03007654321").first()
+    tariq_user = db.query(User).filter(User.phone_number == "03023456789").first()
     if not demo_user:
         return
 
@@ -402,6 +502,54 @@ def seed_community_fields(db: Session):
             }
         }
     ]
+
+    if usman_user:
+        sample_parcels.append({
+            "field_id": "fld_seed_comm_03",
+            "field_code": "PK-SKP-01",
+            "user_id": usman_user.user_id,
+            "field_name": "Mianwali Bangla Farm",
+            "shape_type": "polygon",
+            "area_acres": 15.0,
+            "area_sqm": 60702.8,
+            "center_latitude": 31.7167,
+            "center_longitude": 73.9850,
+            "boundary_geojson": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [73.9820, 31.7150],
+                    [73.9880, 31.7150],
+                    [73.9880, 31.7185],
+                    [73.9820, 31.7185],
+                    [73.9820, 31.7150]
+                ]],
+                "properties": {"soil_texture": "Silt Loam"}
+            }
+        })
+
+    if tariq_user:
+        sample_parcels.append({
+            "field_id": "fld_seed_comm_04",
+            "field_code": "PK-SGD-01",
+            "user_id": tariq_user.user_id,
+            "field_name": "Bhalwal Wheat Belt",
+            "shape_type": "polygon",
+            "area_acres": 10.0,
+            "area_sqm": 40468.6,
+            "center_latitude": 32.0836,
+            "center_longitude": 72.6711,
+            "boundary_geojson": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [72.6680, 32.0820],
+                    [72.6740, 32.0820],
+                    [72.6740, 32.0850],
+                    [72.6680, 32.0850],
+                    [72.6680, 32.0820]
+                ]],
+                "properties": {"soil_texture": "Loamy Clay"}
+            }
+        })
 
     for p in sample_parcels:
         if not db.query(Field).filter(Field.field_id == p["field_id"]).first():

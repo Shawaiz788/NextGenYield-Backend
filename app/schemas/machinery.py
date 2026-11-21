@@ -61,3 +61,30 @@ class MachineryListingResponse(BaseModel):
     is_available: bool
     created_at: datetime
     bookings: Optional[List[MachineryBookingResponse]] = None
+
+class MachineryDailySlot(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    slot_id: str  # "morning", "afternoon", "evening", "full_day"
+    label_en: str
+    label_ur: str
+    start_time: str  # "08:00"
+    end_time: str    # "12:00"
+    duration_hours: float
+    is_available: bool
+    price_pkr: float
+
+class MachineryDayAvailability(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    date: str  # "YYYY-MM-DD"
+    day_status: str  # "available", "fully_booked", "past"
+    is_fully_booked: bool
+    slots: List[MachineryDailySlot] = []
+
+class MachineryScheduleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    machinery_id: str
+    month: str  # "YYYY-MM"
+    days: List[MachineryDayAvailability]

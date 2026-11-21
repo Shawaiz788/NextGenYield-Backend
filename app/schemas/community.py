@@ -53,6 +53,47 @@ class UserConnectionResponse(BaseModel):
     status: str
     created_at: datetime
 
+class PaginatedFarmersResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: List[UserConnectionResponse]
+    total: int
+    page: int
+    total_pages: int
+    limit: int
+
+class MachinerySummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    machinery_id: str
+    title: str
+    machinery_type: str
+    daily_rate_pkr: float
+    hourly_rate_pkr: Optional[float] = None
+    district: str
+    is_available: bool
+
+class MarketplaceItemSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    item_id: str
+    title: str
+    category: str
+    price_pkr: float
+    condition: str
+    is_sold: bool
+    image_url: Optional[str] = None
+
+class PostSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    post_id: str
+    title: str
+    category: str
+    likes_count: int
+    comments_count: int
+    created_at: datetime
+
 class PublicUserProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -63,10 +104,16 @@ class PublicUserProfileResponse(BaseModel):
     phone_number: Optional[str] = None
     total_fields: int = 0
     total_acreage: float = 0.0
+    active_crops_count: int = 0
     posts_count: int = 0
+    machinery_count: int = 0
+    marketplace_count: int = 0
     connection_status: str = "none"  # "none", "pending", "accepted", "self"
     connection_id: Optional[str] = None
     fields: List[FieldResponse] = []
+    machinery: List[MachinerySummary] = []
+    marketplace_items: List[MarketplaceItemSummary] = []
+    recent_posts: List[PostSummary] = []
     created_at: datetime
 
 class SendMessageRequest(BaseModel):

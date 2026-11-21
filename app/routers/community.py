@@ -2,11 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
+import math
 from datetime import datetime
 
 from app.database import get_db
 from app.models.user import User
 from app.models.field import Field
+from app.models.machinery import MachineryListing
+from app.models.marketplace import MarketplaceItem
 from app.routers.fields import enrich_field_with_cycle
 from app.models.community import (
     CommunityPost,
@@ -22,6 +25,10 @@ from app.schemas.community import (
     CommentCreateRequest,
     CommentResponse,
     UserConnectionResponse,
+    PaginatedFarmersResponse,
+    MachinerySummary,
+    MarketplaceItemSummary,
+    PostSummary,
     PublicUserProfileResponse,
     SendMessageRequest,
     MessageResponse,
@@ -193,38 +200,62 @@ def add_post_comment(
 
 # --- FARMER DISCOVERY & CONNECTIONS ---
 
-@router.get("/farmers", response_model=List[UserConnectionResponse])
+@router.get("/farmers", response_model=PaginatedFarmersResponse)
 def discover_farmers(
+    search: Optional[str] = Query(None, description="Search by farmer name, district, phone, or role"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(8, ge=1, le=50, description="Items per page"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Discover fellow wheat farmers and landowners."""
-    users = db.query(User).filter(User.user_id != current_user.user_id).limit(50).all()
-    
+    """Discover fellow wheat farmers and landowners with search and pagination."""
+    query = db.query(User).filter(User.user_id != current_user.user_id)
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            (User.full_name.ilike(term)) |
+            (User.district.ilike(term)) |
+            (User.phone_number.ilike(term)) |
+            (User.role.ilike(term))
+        )
+
+    total = query.count()
+    total_pages = max(1, math.ceil(total / limit))
+    offset = (page - 1) * limit
+    users = query.order_by(User.created_at.desc()).offset(offset).limit(limit).all()
+
     # Check existing connections
     connections = db.query(UserConnection).filter(
         (UserConnection.requester_id == current_user.user_id) |
         (UserConnection.target_id == current_user.user_id)
     ).all()
-    
+
     conn_map = {}
     for c in connections:
         other_id = c.target_id if c.requester_id == current_user.user_id else c.requester_id
         conn_map[other_id] = (c.connection_id, c.status)
 
-    result = []
+    items = []
     for u in users:
         conn_info = conn_map.get(u.user_id)
-        result.append(UserConnectionResponse(
+        items.append(UserConnectionResponse(
             connection_id=conn_info[0] if conn_info else f"none_{u.user_id}",
             user_id=u.user_id,
             full_name=u.full_name,
-            district=u.district,
-            role=u.role,
+            district=u.district or "Punjab",
+            role=u.role or "farmer",
             status=conn_info[1] if conn_info else "none",
             created_at=u.created_at
         ))
-    return result
+
+    return PaginatedFarmersResponse(
+        items=items,
+        total=total,
+        page=page,
+        total_pages=total_pages,
+        limit=limit
+    )
 
 @router.post("/farmers/{target_user_id}/connect")
 def connect_with_farmer(
@@ -276,7 +307,7 @@ def get_user_public_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retrieve public farmer profile with farm overview and friendship status."""
+    """Retrieve public farmer profile with authentic farm records and overview."""
     target_user = db.query(User).filter(User.user_id == user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Farmer profile not found.")
@@ -292,7 +323,7 @@ def get_user_public_profile(
         conn_status = conn.status if conn else "none"
         conn_id = conn.connection_id if conn else None
 
-    # Aggregate fields and acreage
+    # Aggregate real fields and acreage
     raw_fields = db.query(Field).filter(Field.user_id == user_id).all()
     enriched_fields = [enrich_field_with_cycle(f, db) for f in raw_fields]
     for ef in enriched_fields:
@@ -302,6 +333,49 @@ def get_user_public_profile(
         ef.is_mine = (user_id == current_user.user_id)
 
     total_acres = round(sum(f.area_acres for f in raw_fields), 1) if raw_fields else 0.0
+    active_crops_count = sum(1 for ef in enriched_fields if getattr(ef, 'has_active_cycle', False) or getattr(ef, 'cycle_status', '') == "active")
+
+    # Real machinery listings
+    raw_machinery = db.query(MachineryListing).filter(MachineryListing.owner_id == user_id).all()
+    machinery_summaries = [
+        MachinerySummary(
+            machinery_id=m.machinery_id,
+            title=m.title,
+            machinery_type=m.machinery_type,
+            daily_rate_pkr=float(m.daily_rate_pkr),
+            hourly_rate_pkr=float(m.hourly_rate_pkr) if m.hourly_rate_pkr else None,
+            district=m.district,
+            is_available=m.is_available
+        ) for m in raw_machinery
+    ]
+
+    # Real marketplace items
+    raw_market = db.query(MarketplaceItem).filter(MarketplaceItem.seller_id == user_id).all()
+    market_summaries = [
+        MarketplaceItemSummary(
+            item_id=it.item_id,
+            title=it.title,
+            category=it.category,
+            price_pkr=float(it.price_pkr),
+            condition=it.condition,
+            is_sold=it.is_sold,
+            image_url=it.image_url
+        ) for it in raw_market
+    ]
+
+    # Real community posts
+    raw_posts = db.query(CommunityPost).filter(CommunityPost.user_id == user_id).order_by(CommunityPost.created_at.desc()).limit(10).all()
+    post_summaries = [
+        PostSummary(
+            post_id=p.post_id,
+            title=p.title,
+            category=p.category,
+            likes_count=p.likes_count,
+            comments_count=p.comments_count,
+            created_at=p.created_at
+        ) for p in raw_posts
+    ]
+
     posts_count = db.query(CommunityPost).filter(CommunityPost.user_id == user_id).count()
 
     return PublicUserProfileResponse(
@@ -312,10 +386,16 @@ def get_user_public_profile(
         phone_number=target_user.phone_number,
         total_fields=len(raw_fields),
         total_acreage=total_acres,
+        active_crops_count=active_crops_count,
         posts_count=posts_count,
+        machinery_count=len(raw_machinery),
+        marketplace_count=len(raw_market),
         connection_status=conn_status,
         connection_id=conn_id,
         fields=enriched_fields,
+        machinery=machinery_summaries,
+        marketplace_items=market_summaries,
+        recent_posts=post_summaries,
         created_at=target_user.created_at
     )
 

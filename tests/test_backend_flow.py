@@ -530,6 +530,23 @@ def test_machinery_rental_and_booking_flow(auth_headers):
     assert my_bookings.status_code == 200
     assert len(my_bookings.json()) >= 1
 
+    # 5. Verify machinery schedule endpoint
+    sched_resp = client.get(f"/api/v1/machinery/{mach_id}/schedule", headers=auth_headers)
+    assert sched_resp.status_code == 200
+    sched_data = sched_resp.json()
+    assert "days" in sched_data
+    assert len(sched_data["days"]) >= 28
+
+    # 6. Verify conflict prevention with 1-hour transit buffer
+    conflict_payload = {
+        "start_date": (end - timedelta(hours=2)).isoformat(),
+        "end_date": (end + timedelta(hours=2)).isoformat(),
+        "purpose_step": "laser_leveling"
+    }
+    conflict_resp = client.post(f"/api/v1/machinery/{mach_id}/book", json=conflict_payload, headers=auth_headers)
+    assert conflict_resp.status_code == 400
+    assert "conflict" in conflict_resp.json()["detail"].lower()
+
 
 def test_farm_employee_delegation_flow(auth_headers, active_field_and_cycle):
     """Verify owner adding employee, delegating fields, and employee field query."""
@@ -707,5 +724,15 @@ def test_public_user_profile_and_disconnect_flow(auth_headers):
     peer_prof3 = client.get(f"/api/v1/community/users/{peer_user_id}/profile", headers=auth_headers)
     assert peer_prof3.status_code == 200
     assert peer_prof3.json()["connection_status"] == "none"
+
+    # 9. Verify paginated farmer discovery and search
+    search_resp = client.get("/api/v1/community/farmers?search=Ali&page=1&limit=5", headers=auth_headers)
+    assert search_resp.status_code == 200
+    search_data = search_resp.json()
+    assert "items" in search_data
+    assert "total" in search_data
+    assert "page" in search_data
+    assert search_data["page"] == 1
+    assert search_data["limit"] == 5
 
 
