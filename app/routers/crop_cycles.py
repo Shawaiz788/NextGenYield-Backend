@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.field import Field
 from app.models.crop_cycle import CropCycle
 from app.models.schedule import FertilizerSchedule, IrrigationSchedule
+from app.models.employee import FarmEmployee, FieldAssignment
 from app.schemas.crop_cycle import (
     StartCropCycleRequest,
     CropCycleResponse,
@@ -30,12 +31,19 @@ def start_crop_cycle(
     Activates an unstarted field by recording seed variety, seed provider, fertilizer brand,
     sowing technique, and sowing date, automatically generating the 140-day crop schedules.
     """
-    field = db.query(Field).filter(
-        Field.field_id == req.field_id,
-        Field.user_id == current_user.user_id
-    ).first()
+    field = db.query(Field).filter(Field.field_id == req.field_id).first()
     if not field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
+
+    if field.user_id != current_user.user_id:
+        emp = db.query(FarmEmployee).filter(
+            ((FarmEmployee.employee_user_id == current_user.user_id) |
+             (FarmEmployee.employee_phone == current_user.phone_number)),
+            FarmEmployee.owner_id == field.user_id,
+            FarmEmployee.is_active == True
+        ).first()
+        if not emp or not emp.can_edit_schedule:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission to start crop cycle denied")
 
     cycle_id = f"cyc_{uuid.uuid4().hex[:12]}"
     target_harvest = req.target_harvest_date or (req.sowing_date + timedelta(days=140))
@@ -90,22 +98,40 @@ def get_active_crop_cycle_for_field(
     including all generated fertilizer and irrigation schedule milestones.
     Returns 404 if the field does not exist or has no active cycle.
     """
-    field = db.query(Field).filter(
-        Field.field_id == field_id,
-        Field.user_id == current_user.user_id
-    ).first()
+    field = db.query(Field).filter(Field.field_id == field_id).first()
     if not field:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Field with ID '{field_id}' not found"
         )
 
-    cycle = (
-        db.query(CropCycle)
-        .filter(CropCycle.field_id == field_id, CropCycle.is_active == True)
-        .order_by(CropCycle.created_at.desc())
-        .first()
-    )
+    if field.user_id != current_user.user_id:
+        emp = db.query(FarmEmployee).filter(
+            ((FarmEmployee.employee_user_id == current_user.user_id) |
+             (FarmEmployee.employee_phone == current_user.phone_number)),
+            FarmEmployee.owner_id == field.user_id,
+            FarmEmployee.is_active == True
+        ).first()
+        if not emp:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        if not emp.access_all_fields:
+            assignment = db.query(FieldAssignment).filter(
+                FieldAssignment.employee_record_id == emp.employee_record_id,
+                FieldAssignment.field_id == field_id
+            ).first()
+            if not assignment:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Field not assigned to you")
+
+    cycle = None
+    if field.current_cycle_id:
+        cycle = db.query(CropCycle).filter(CropCycle.cycle_id == field.current_cycle_id, CropCycle.is_active == True).first()
+    if not cycle:
+        cycle = (
+            db.query(CropCycle)
+            .filter(CropCycle.field_id == field_id, CropCycle.is_active == True)
+            .order_by(CropCycle.created_at.desc())
+            .first()
+        )
 
     if not cycle:
         raise HTTPException(
@@ -152,12 +178,19 @@ def get_cycle_details(
     if not cycle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crop cycle not found")
 
-    field = db.query(Field).filter(
-        Field.field_id == cycle.field_id,
-        Field.user_id == current_user.user_id
-    ).first()
+    field = db.query(Field).filter(Field.field_id == cycle.field_id).first()
     if not field:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated field not found")
+
+    if field.user_id != current_user.user_id:
+        emp = db.query(FarmEmployee).filter(
+            ((FarmEmployee.employee_user_id == current_user.user_id) |
+             (FarmEmployee.employee_phone == current_user.phone_number)),
+            FarmEmployee.owner_id == field.user_id,
+            FarmEmployee.is_active == True
+        ).first()
+        if not emp:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     ferts = db.query(FertilizerSchedule).filter(FertilizerSchedule.cycle_id == cycle_id).order_by(FertilizerSchedule.split_number).all()
     irrigs = db.query(IrrigationSchedule).filter(IrrigationSchedule.cycle_id == cycle_id).order_by(IrrigationSchedule.target_das).all()

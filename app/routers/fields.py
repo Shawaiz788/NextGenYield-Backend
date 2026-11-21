@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime
 import uuid
 from app.database import get_db
 from app.models.user import User
 from app.models.field import Field
 from app.models.crop_cycle import CropCycle
+from app.models.observation import FieldObservation
 from app.models.employee import FarmEmployee, FieldAssignment
 from app.schemas.field import (
     FieldCreateRequest,
@@ -37,6 +39,65 @@ def calculate_centroid(geojson: dict) -> tuple[float, float]:
     # Fallback default (Faisalabad / Lahore Indus Basin coords)
     return 31.418715, 73.079109
 
+def enrich_field_with_cycle(f: Field, db: Session) -> Field:
+    """Dynamically hydrate active crop cycle details onto the field parcel response."""
+    f.cycle_status = "not_started"
+    f.current_stage_index = 0
+    f.days_after_sowing = None
+    f.wheat_variety = None
+    f.seed_company = None
+    f.fertilizer_company = None
+    f.sowing_date = None
+    f.target_harvest_date = None
+
+    cycle = None
+    if f.current_cycle_id:
+        cycle = db.query(CropCycle).filter(CropCycle.cycle_id == f.current_cycle_id).first()
+    if not cycle:
+        cycle = (
+            db.query(CropCycle)
+            .filter(CropCycle.field_id == f.field_id, CropCycle.is_active == True)
+            .order_by(CropCycle.created_at.desc())
+            .first()
+        )
+
+    if cycle and cycle.is_active:
+        f.current_cycle_id = cycle.cycle_id
+        f.wheat_variety = cycle.wheat_variety
+        f.seed_company = cycle.seed_company
+        f.fertilizer_company = cycle.fertilizer_company
+        f.sowing_date = cycle.sowing_date
+        f.target_harvest_date = cycle.target_harvest_date
+        f.cycle_status = "active"
+
+        if cycle.sowing_date:
+            das = max(1, (datetime.now().date() - cycle.sowing_date).days + 1)
+            f.days_after_sowing = min(das, 140)
+
+            # Check if there is an AI observation for this cycle
+            obs = (
+                db.query(FieldObservation)
+                .filter(FieldObservation.cycle_id == cycle.cycle_id)
+                .order_by(FieldObservation.captured_at.desc())
+                .first()
+            )
+            if obs:
+                f.current_stage_index = obs.stage_index
+            else:
+                if das <= 35:
+                    f.current_stage_index = 0
+                elif das <= 65:
+                    f.current_stage_index = 1
+                elif das <= 85:
+                    f.current_stage_index = 2
+                elif das <= 105:
+                    f.current_stage_index = 3
+                elif das <= 125:
+                    f.current_stage_index = 4
+                else:
+                    f.current_stage_index = 5
+    return f
+
 @router.get("/", response_model=List[FieldResponse])
 def get_user_fields(
     current_user: User = Depends(get_current_user),
@@ -65,7 +126,7 @@ def get_user_fields(
                     if f:
                         field_dict[f.field_id] = f
 
-    return list(field_dict.values())
+    return [enrich_field_with_cycle(f, db) for f in field_dict.values()]
 
 @router.post("/", response_model=FieldResponse, status_code=status.HTTP_201_CREATED)
 def create_field(
@@ -124,7 +185,7 @@ def create_field(
     db.add(new_field)
     db.commit()
     db.refresh(new_field)
-    return new_field
+    return enrich_field_with_cycle(new_field, db)
 
 @router.get("/{field_id}", response_model=FieldResponse)
 def get_field_details(
@@ -153,7 +214,7 @@ def get_field_details(
             ).first()
             if not assignment:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Field not assigned to you")
-    return field
+    return enrich_field_with_cycle(field, db)
 
 @router.put("/{field_id}", response_model=FieldResponse)
 def update_field(
@@ -236,7 +297,7 @@ def update_field(
 
     db.commit()
     db.refresh(field)
-    return field
+    return enrich_field_with_cycle(field, db)
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_field(

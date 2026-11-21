@@ -2,7 +2,7 @@
 backend/app/schemas/advisory.py
 Pydantic v2 schemas for deterministic advisory rules and peer farmer showcase benchmarks.
 """
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Optional, List, Dict, Any, Union
 from datetime import date
 
@@ -64,3 +64,31 @@ class AdvisoryRuleResponse(BaseModel):
     nutrient_advice_ur: str
     risk_alerts: List[Dict[str, Any]]
     audio_script_ur: str
+    # Compatibility aliases for mobile clients
+    water_recommendation: Optional[str] = None
+    critical_nutrient: Optional[str] = None
+    primary_action: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_compat_advisory_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if not data.get("water_recommendation"):
+                data["water_recommendation"] = data.get("irrigation_advice_en", "")
+            if not data.get("critical_nutrient"):
+                data["critical_nutrient"] = data.get("nutrient_advice_en", "")
+            if not data.get("primary_action"):
+                data["primary_action"] = data.get("nutrient_advice_en", "")
+        else:
+            try:
+                water = getattr(data, "irrigation_advice_en", "")
+                nutrient = getattr(data, "nutrient_advice_en", "")
+                if not getattr(data, "water_recommendation", None):
+                    setattr(data, "water_recommendation", water)
+                if not getattr(data, "critical_nutrient", None):
+                    setattr(data, "critical_nutrient", nutrient)
+                if not getattr(data, "primary_action", None):
+                    setattr(data, "primary_action", nutrient)
+            except Exception:
+                pass
+        return data

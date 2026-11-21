@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import Optional, List, Any, Dict
-from datetime import datetime
+from datetime import datetime, date
 
 MAX_FIELD_ACRES = 5000.0
 MAX_FIELD_SQM = 25_000_000.0
@@ -103,6 +103,14 @@ class FieldResponse(BaseModel):
     center_latitude: float
     center_longitude: float
     current_cycle_id: Optional[str] = None
+    wheat_variety: Optional[str] = None
+    seed_company: Optional[str] = None
+    fertilizer_company: Optional[str] = None
+    sowing_date: Optional[date] = None
+    target_harvest_date: Optional[date] = None
+    cycle_status: str = "not_started"
+    current_stage_index: int = 0
+    days_after_sowing: Optional[int] = None
     soil_texture: Optional[str] = None
     created_at: datetime
 
