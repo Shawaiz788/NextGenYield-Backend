@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -41,12 +41,20 @@ def get_rule_by_stage(stage_index: int, db: Session = Depends(get_db)):
 showcase_router = APIRouter(prefix="/showcase", tags=["Peer Showcase & Benchmarks"])
 
 @showcase_router.get("/", response_model=List[PeerShowcaseResponse])
-def get_peer_benchmarks(db: Session = Depends(get_db)):
+def get_peer_benchmarks(
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of top-yielding plots to return"),
+    db: Session = Depends(get_db)
+):
     """
     Use Case 9: Peer Showcase & Best-Practice Yield Benchmarks (Table 4.9 in F26-201).
-    Returns verified top-yielding plots (54-62 Maunds/Acre).
+    Returns verified top-yielding plots (54-62 Maunds/Acre), capped to Top 10 by default.
     """
-    benchmarks = db.query(PeerShowcaseField).order_by(PeerShowcaseField.yield_maunds_per_acre.desc()).all()
+    benchmarks = (
+        db.query(PeerShowcaseField)
+        .order_by(PeerShowcaseField.yield_maunds_per_acre.desc())
+        .limit(limit)
+        .all()
+    )
     return benchmarks
 
 @showcase_router.get("/{showcase_id}", response_model=PeerShowcaseResponse)
