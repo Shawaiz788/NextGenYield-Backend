@@ -394,6 +394,16 @@ def test_peer_showcase_submission_and_retrieval(auth_headers):
     bad_resp = client.get("/api/v1/showcase/sc_invalid_nonexistent")
     assert bad_resp.status_code == 404
 
+    # 5. Cleanup test showcase entry so repeated test runs do not pollute Proven Yields
+    from app.database import SessionLocal
+    from app.models.advisory import PeerShowcaseField
+    db = SessionLocal()
+    try:
+        db.query(PeerShowcaseField).filter(PeerShowcaseField.showcase_id == sc_id).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
 def test_observation_upload_and_retrieval(auth_headers, active_field_and_cycle):
     """
     Verify multipart visual observation upload and timeline retrieval:

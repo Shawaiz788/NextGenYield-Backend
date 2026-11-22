@@ -148,10 +148,14 @@ SHOWCASE_FIELDS_SEED = [
         "sowing_date": date(2025, 11, 15),
         "harvest_date": date(2026, 4, 5),
         "cycle_event_log": [
-            {"day": 0, "event": "Bed planting with Engro Zorawar (DAP)"},
-            {"day": 21, "event": "1st irrigation with Engro Urea"},
-            {"day": 75, "event": "Booting check; zero rust infestation"},
-            {"day": 140, "event": "Harvested @ 58.4 Maunds/Acre"}
+            {"day": 0, "event": "Bed planting with Engro Zorawar (DAP) @ 50kg/acre"},
+            {"day": 21, "event": "1st irrigation (CRI) with 1 Bag Engro Urea"},
+            {"day": 42, "event": "Selective broadleaf & grassy weed management"},
+            {"day": 55, "event": "2nd irrigation (Jointing) with 0.5 Bag Urea + Zinc"},
+            {"day": 75, "event": "Booting irrigation + Foliar Potash & Boron spray"},
+            {"day": 95, "event": "Anthesis / Flowering monitoring; zero rust observed"},
+            {"day": 116, "event": "Final light grain-filling irrigation"},
+            {"day": 140, "event": "Combine harvested @ 58.4 Maunds/Acre"}
         ]
     },
 ]
