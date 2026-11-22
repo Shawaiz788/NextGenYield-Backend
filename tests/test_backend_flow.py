@@ -626,6 +626,18 @@ def test_community_posts_and_chat_flow(auth_headers):
     convs = client.get("/api/v1/community/conversations", headers=auth_headers)
     assert convs.status_code == 200
 
+    # 6. Cleanup test post so repeated test runs do not leave duplicate posts in DB
+    from app.database import SessionLocal
+    from app.models.community import CommunityPost, PostComment, PostLike
+    db = SessionLocal()
+    try:
+        db.query(PostComment).filter(PostComment.post_id == post_id).delete(synchronize_session=False)
+        db.query(PostLike).filter(PostLike.post_id == post_id).delete(synchronize_session=False)
+        db.query(CommunityPost).filter(CommunityPost.post_id == post_id).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
 
 def test_marketplace_items_flow(auth_headers):
     """Verify Facebook-style marketplace listing, filtering, and sold toggle."""
