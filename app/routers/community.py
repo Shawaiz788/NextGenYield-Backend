@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
@@ -58,6 +59,18 @@ def get_community_feed(
         like.post_id for like in db.query(PostLike.post_id).filter(PostLike.user_id == current_user.user_id).all()
     )
 
+    # Compute exact comment counts from PostComment table so badges always match actual comments
+    post_ids = [p.post_id for p in posts]
+    comment_counts_map = {}
+    if post_ids:
+        rows = (
+            db.query(PostComment.post_id, func.count(PostComment.comment_id))
+            .filter(PostComment.post_id.in_(post_ids))
+            .group_by(PostComment.post_id)
+            .all()
+        )
+        comment_counts_map = {pid: cnt for pid, cnt in rows}
+
     return [
         PostResponse(
             post_id=p.post_id,
@@ -69,7 +82,7 @@ def get_community_feed(
             content=p.content,
             image_url=p.image_url,
             likes_count=p.likes_count,
-            comments_count=p.comments_count,
+            comments_count=comment_counts_map.get(p.post_id, 0),
             is_liked_by_me=p.post_id in liked_post_ids,
             created_at=p.created_at
         ) for p in posts

@@ -11,7 +11,7 @@ from app.models.advisory import AgronomicAdvisoryRule, PeerShowcaseField
 from app.models.user import User
 from app.models.machinery import MachineryListing, MachineryBooking
 from app.models.marketplace import MarketplaceItem
-from app.models.community import CommunityPost
+from app.models.community import CommunityPost, PostComment
 from app.models.field import Field
 
 logger = logging.getLogger("NextGenYield:Seed")
@@ -388,6 +388,63 @@ def seed_community_machinery_marketplace(db: Session):
         else:
             existing_p.user_id = p["user_id"]
             existing_p.author_name = p["author_name"]
+    db.flush()
+
+    # Seed Authentic Comments on Seed Community Posts
+    seed_comments = [
+        {
+            "comment_id": "cmt_seed_01",
+            "post_id": "post_seed_01",
+            "user_id": usman_user.user_id,
+            "author_name": usman_user.full_name,
+            "content": "Agreed! We sowed Akbar-2019 on Nov 12 last season and got 54 maunds/acre with balanced DAP and Urea."
+        },
+        {
+            "comment_id": "cmt_seed_02",
+            "post_id": "post_seed_01",
+            "user_id": tariq_user.user_id,
+            "author_name": tariq_user.full_name,
+            "content": "For Sargodha irrigated lands, drilling before Nov 18 gave us the strongest crown root establishment."
+        },
+        {
+            "comment_id": "cmt_seed_03",
+            "post_id": "post_seed_02",
+            "user_id": demo_user.user_id,
+            "author_name": demo_user.full_name,
+            "content": "Laser leveling also prevents waterlogging in low corners during winter rain. Worth every rupee!"
+        },
+        {
+            "comment_id": "cmt_seed_04",
+            "post_id": "post_seed_02",
+            "user_id": tariq_user.user_id,
+            "author_name": tariq_user.full_name,
+            "content": "How many hours did your 15-acre plot take with the MF-385 laser leveler?"
+        },
+        {
+            "comment_id": "cmt_seed_05",
+            "post_id": "post_seed_03",
+            "user_id": demo_user.user_id,
+            "author_name": demo_user.full_name,
+            "content": "Hermetic super grain bags worked great for us last Rabi — zero weevil damage even after 6 months."
+        },
+        {
+            "comment_id": "cmt_seed_06",
+            "post_id": "post_seed_03",
+            "user_id": usman_user.user_id,
+            "author_name": usman_user.full_name,
+            "content": "Always check grain moisture with a meter before sealing the bags; above 12% causes fungal heating."
+        },
+    ]
+    for c in seed_comments:
+        if not db.query(PostComment).filter(PostComment.comment_id == c["comment_id"]).first():
+            db.add(PostComment(**c))
+    db.flush()
+
+    # Keep stored comments_count in sync with actual PostComment rows for seed posts
+    for p in posts:
+        post_obj = db.query(CommunityPost).filter(CommunityPost.post_id == p["post_id"]).first()
+        if post_obj:
+            post_obj.comments_count = db.query(PostComment).filter(PostComment.post_id == p["post_id"]).count()
 
     # Seed Marketplace Items with Authentic Sellers
     market_items = [
